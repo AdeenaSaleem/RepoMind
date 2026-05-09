@@ -44,8 +44,9 @@ def test_job_manager_lifecycle():
         job_manager.get("this_job_does_not_exist")
 
 
+@patch("api.routes.ChatGroq")
 @patch("api.routes.AgentChain")
-def test_api_endpoints_integration(mock_agent_class):
+def test_api_endpoints_integration(mock_agent_class, mock_groq):
     """Test the 3 API endpoints (/run, /status, /refine)."""
     mock_agent = mock_agent_class.return_value
     mock_result = MagicMock()
