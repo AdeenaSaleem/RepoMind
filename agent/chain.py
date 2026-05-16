@@ -4,10 +4,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import SystemMessage
 
 from agent.memory import MemoryManager
 from agent.planner import TaskPlanner, Plan
 from agent.executor import StepExecutor, ExecutorOutput, ToolSpec, FileChange
+from prompts.system_prompt import SYSTEM_PROMPT
 
 
 @dataclass
@@ -21,30 +23,76 @@ class ChainResult:
 class AgentChain:
     """
     Main LangChain-based orchestration:
-    1) Read context from memory
-    2) Build plan from instruction
-    3) Execute each step with tools
-    4) Persist outcomes back to memory
+
+    1. Inject the RepoMind system prompt as the first message in every run.
+    2. Read context from memory (last 12 messages).
+    3. Build a concrete plan from the instruction + memory context.
+    4. Execute each step with tools, passing memory context to the executor.
+    5. Persist outcomes back to memory.
+
+    The system prompt (from prompts/system_prompt.py) is prepended to the
+    context_messages list before being forwarded to both the planner and the
+    executor, so every LLM call in the chain shares the same persona and rules.
     """
 
-    def __init__(self, llm: BaseChatModel, tools: List[ToolSpec], memory: MemoryManager | None = None) -> None:
+    def __init__(
+        self,
+        llm: BaseChatModel,
+        tools: List[ToolSpec],
+        memory: MemoryManager | None = None,
+    ) -> None:
         self.llm = llm
         self.memory = memory or MemoryManager()
         self.planner = TaskPlanner(llm=llm)
         self.executor = StepExecutor(llm=llm, tools=tools)
 
-    def run(self, session_id: str, instruction: str) -> ChainResult:
-        self.memory.append_user_message(session_id, instruction)
-        context = self.memory.get_context_messages(session_id)
+        # Build the system message once — it never changes between runs.
+        self._system_message = SystemMessage(content=SYSTEM_PROMPT)
 
-        plan = self.planner.plan(instruction=instruction, context_messages=context)
+    # ── Public API ───────────────────────────────────────────────────────────
+
+    def run(self, session_id: str, instruction: str) -> ChainResult:
+        """
+        Execute one full agent turn: plan → execute → persist → summarise.
+
+        Args:
+            session_id: Unique identifier for this job / conversation session.
+            instruction: The user's plain-English change request.
+
+        Returns:
+            ChainResult containing the session id, original instruction,
+            the generated Plan, and the full ExecutorOutput.
+        """
+        # 1. Record the user's instruction in memory.
+        self.memory.append_user_message(session_id, instruction)
+
+        # 2. Retrieve conversation history for this session.
+        raw_context = self.memory.get_context_messages(session_id)
+
+        # 3. Prepend the system prompt so every downstream LLM call has it.
+        #    We build a fresh list each run — we never mutate memory directly.
+        context_with_system = self._build_context(raw_context)
+
+        # 4. Plan — passes the enriched context so the planner knows the
+        #    full conversation history AND the RepoMind persona.
+        plan = self.planner.plan(
+            instruction=instruction,
+            context_messages=context_with_system,
+        )
         self.memory.set_plan(session_id, [s.task for s in plan.steps])
 
+        # 5. Execute — the executor's _decide_tool calls already receive the
+        #    step's full detail (target_files, target_function, new_logic).
+        #    We additionally pass the enriched context via the executor's
+        #    memory_context attribute so tool prompts can reference history.
+        self._inject_memory_context(context_with_system)
         execution = self.executor.execute(plan)
 
+        # 6. Mark completed steps in memory.
         for result in execution.results:
             self.memory.mark_step_completed(session_id, result.step_task)
 
+        # 7. Build a human-readable summary and store it as an AI message.
         summary = self._build_summary(plan, execution)
         self.memory.append_ai_message(session_id, summary)
 
@@ -55,12 +103,56 @@ class AgentChain:
             execution=execution,
         )
 
+    # ── Private helpers ──────────────────────────────────────────────────────
+
+    def _build_context(self, raw_context: list) -> list:
+        """
+        Prepend the RepoMind system message to the conversation history.
+
+        The system message is always first so every LLM call — whether it
+        comes from the planner or the executor — opens with the correct persona.
+        """
+        return [self._system_message] + list(raw_context)
+
+    def _inject_memory_context(self, context_with_system: list) -> None:
+        """
+        Store the enriched context on the executor so its tool-selection and
+        code-generation prompts can reference conversation history.
+
+        StepExecutor.memory_context is read by _decide_tool when building
+        the 'previous_summary' variable.  If a future refactor adds an
+        explicit memory_context parameter to _decide_tool, remove this method.
+        """
+        self.executor.memory_context = context_with_system
+
     def _build_summary(self, plan: Plan, execution: ExecutorOutput) -> str:
-        lines = [f"Planned {len(plan.steps)} step(s). Executed {len(execution.results)} step(s)."]
+        """
+        Produce a concise human-readable summary of what the agent did.
+
+        This summary is stored as an AI message in memory so follow-up
+        refinement runs have full context of what was already changed.
+        """
+        retried_steps = [r.step_id for r in execution.results if r.retried]
+
+        lines = [
+            f"Planned {len(plan.steps)} step(s). " f"Executed {len(execution.results)} step(s)."
+        ]
+
+        if retried_steps:
+            lines.append(f"Steps that required a retry due to empty file_changes: {retried_steps}")
+
         if execution.all_file_changes:
-            lines.append("File changes:")
+            lines.append(f"File changes ({len(execution.all_file_changes)} total):")
             for c in execution.all_file_changes:
-                lines.append(f"- {c.filename}: {c.reason}")
+                lines.append(f"  - {c.filename}: {c.reason}")
         else:
-            lines.append("No file changes generated.")
+            lines.append("No file changes were generated.")
+
+        skipped = [r for r in execution.results if not r.file_changes and r.tool_name is not None]
+        if skipped:
+            lines.append(
+                "Steps that produced no output (tool not found or empty after retry): "
+                + ", ".join(str(r.step_id) for r in skipped)
+            )
+
         return "\n".join(lines)
