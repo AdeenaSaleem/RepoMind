@@ -44,16 +44,10 @@ def test_job_manager_lifecycle():
         job_manager.get("this_job_does_not_exist")
 
 
-@patch("api.routes.ChatGroq")
-@patch("api.routes.AgentChain")
-def test_api_endpoints_integration(mock_agent_class, mock_groq):
-    """Test the 3 API endpoints (/run, /status, /refine)."""
-    mock_agent = mock_agent_class.return_value
-    mock_result = MagicMock()
-    mock_result.pr_url = "https://github.com/fake/pull/2"
-    mock_result.summary = "Done"
-    mock_agent.run.return_value = mock_result
-
+@patch("api.routes.run_agent")
+def test_api_endpoints_integration(mock_run_agent):
+    mock_run_agent.return_value = {"pr_url": "https://github.com/fake/pull/2", "summary": "Done"}
+   
     # 1. Test POST /run
     run_payload = {
         "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
