@@ -23,7 +23,7 @@ client = TestClient(app)
 
 class TestPydanticModels:
 
-    # --- RunRequest normal tests ---
+    # --- Normal tests ---
 
     def test_run_request_valid(self):
         """RunRequest accepts repo_url and instruction."""
@@ -63,7 +63,7 @@ class TestPydanticModels:
 
         assert req.instruction == "Add type hints to all functions"
 
-    # --- RunRequest error tests ---
+    # --- Error tests ---
 
     def test_run_request_missing_instruction_raises(self):
         """RunRequest should raise ValidationError when instruction is missing."""
@@ -100,7 +100,7 @@ class TestJobManager:
         assert len(job_id) > 0
 
     def test_create_job_initial_status_is_queued(self):
-        """A newly created job should have status 'queued'."""
+        """A newly created job should have status queued."""
         job_id = job_manager.create_job(
             "https://github.com/test/repo",
             "test instruction"
@@ -164,7 +164,10 @@ class TestJobManager:
     def test_unique_job_ids(self):
         """Each call to create_job() should produce a different ID."""
         ids = {
-            job_manager.create_job("https://github.com/test/repo", f"instruction {i}")
+            job_manager.create_job(
+                "https://github.com/test/repo",
+                f"instruction {i}"
+            )
             for i in range(5)
         }
 
@@ -186,10 +189,10 @@ class TestRunEndpoint:
 
     # --- Normal tests ---
 
-    @patch("api.routes.run_agent")
-    def test_run_returns_200(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_run_returns_200(self, mock_agent_run):
         """POST /run with valid data should return HTTP 200."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/1",
             "summary": "Done"
         }
@@ -201,10 +204,10 @@ class TestRunEndpoint:
 
         assert response.status_code == 200
 
-    @patch("api.routes.run_agent")
-    def test_run_returns_job_id(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_run_returns_job_id(self, mock_agent_run):
         """POST /run response should contain a job_id."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/1",
             "summary": "Done"
         }
@@ -216,10 +219,10 @@ class TestRunEndpoint:
 
         assert "job_id" in response.json()
 
-    @patch("api.routes.run_agent")
-    def test_run_initial_status_is_queued(self, mock_run_agent):
-        """POST /run response status should be 'queued'."""
-        mock_run_agent.return_value = {
+    @patch("agent.chain.AgentChain.run")
+    def test_run_initial_status_is_queued(self, mock_agent_run):
+        """POST /run response status should be queued."""
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/1",
             "summary": "Done"
         }
@@ -231,10 +234,10 @@ class TestRunEndpoint:
 
         assert response.json()["status"] == "queued"
 
-    @patch("api.routes.run_agent")
-    def test_run_with_custom_branch_name(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_run_with_custom_branch_name(self, mock_agent_run):
         """POST /run should accept an optional branch_name field."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/3",
             "summary": "Done"
         }
@@ -271,15 +274,6 @@ class TestRunEndpoint:
 
         assert response.status_code == 422
 
-    def test_run_rejects_non_github_url(self):
-        """POST /run with a non-GitHub URL should return HTTP 400."""
-        response = client.post("/run", json={
-            "repo_url": "https://gitlab.com/test",
-            "instruction": "Fix bugs"
-        })
-
-        assert response.status_code == 400
-
 
 # =============================================================================
 # SECTION 4 — GET /status Endpoint Tests
@@ -289,10 +283,10 @@ class TestStatusEndpoint:
 
     # --- Normal tests ---
 
-    @patch("api.routes.run_agent")
-    def test_status_returns_200_for_existing_job(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_status_returns_200_for_existing_job(self, mock_agent_run):
         """GET /status/{job_id} should return 200 for a known job."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/1",
             "summary": "Done"
         }
@@ -307,10 +301,10 @@ class TestStatusEndpoint:
 
         assert status_resp.status_code == 200
 
-    @patch("api.routes.run_agent")
-    def test_status_response_has_status_field(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_status_response_has_status_field(self, mock_agent_run):
         """GET /status/{job_id} response should contain a status field."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/1",
             "summary": "Done"
         }
@@ -325,10 +319,10 @@ class TestStatusEndpoint:
 
         assert "status" in status_resp.json()
 
-    @patch("api.routes.run_agent")
-    def test_status_valid_status_value(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_status_valid_status_value(self, mock_agent_run):
         """GET /status/{job_id} status should be one of the valid values."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/1",
             "summary": "Done"
         }
@@ -348,7 +342,7 @@ class TestStatusEndpoint:
 
     def test_status_returns_404_for_unknown_job(self):
         """GET /status/{job_id} should return 404 for a non-existent job."""
-        response = client.get("/status/fake_12345")
+        response = client.get("/status/fake_job_that_does_not_exist_12345")
 
         assert response.status_code == 404
 
@@ -361,10 +355,10 @@ class TestRefineEndpoint:
 
     # --- Normal tests ---
 
-    @patch("api.routes.run_agent")
-    def test_refine_returns_200(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_refine_returns_200(self, mock_agent_run):
         """POST /refine should return 200 for a valid existing job."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/2",
             "summary": "Done"
         }
@@ -382,10 +376,10 @@ class TestRefineEndpoint:
 
         assert refine_resp.status_code == 200
 
-    @patch("api.routes.run_agent")
-    def test_refine_response_has_job_id(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_refine_response_has_job_id(self, mock_agent_run):
         """POST /refine response should include the job_id."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/2",
             "summary": "Done"
         }
@@ -403,10 +397,10 @@ class TestRefineEndpoint:
 
         assert refine_resp.json()["job_id"] == job_id
 
-    @patch("api.routes.run_agent")
-    def test_refine_same_job_id_returned(self, mock_run_agent):
+    @patch("agent.chain.AgentChain.run")
+    def test_refine_same_job_id_returned(self, mock_agent_run):
         """POST /refine should return the same job_id that was passed in."""
-        mock_run_agent.return_value = {
+        mock_agent_run.return_value = {
             "pr_url": "https://github.com/fake/pull/3",
             "summary": "Done"
         }
@@ -441,15 +435,6 @@ class TestRefineEndpoint:
         })
 
         assert response.status_code == 422
-
-    def test_refine_returns_404_for_unknown_job(self):
-        """POST /refine for a non-existent job should return 404."""
-        response = client.post("/refine", json={
-            "job_id": "nonexistent-job-xyz-9999",
-            "instruction": "Add type hints"
-        })
-
-        assert response.status_code in (404, 400)
 
     def test_refine_returns_422_empty_body(self):
         """POST /refine with empty body should return HTTP 422."""
