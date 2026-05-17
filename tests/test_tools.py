@@ -51,7 +51,6 @@ class TestCodeParser:
         mock_parser = MagicMock()
         mock_parser.return_value = {
             "main.py": "print('hello')"
-            # .git/config is NOT in the result
         }
 
         result = mock_parser("/fake/repo/path")
@@ -360,14 +359,10 @@ class TestGitHubTool:
 
     def test_commit_changes_returns_hash(self):
         """commit_changes() should return the commit SHA hash."""
-        mock_repo = MagicMock()
-        mock_repo.is_dirty.return_value = True
-        mock_repo.index.commit.return_value.hexsha = "12345abcde"
-
         mock_commit = MagicMock()
         mock_commit.return_value = "12345abcde"
 
-        result = mock_commit(mock_repo, "My test commit")
+        result = mock_commit(MagicMock(), "My test commit")
 
         assert result == "12345abcde"
 
@@ -412,9 +407,7 @@ class TestGitHubTool:
         mock_repo.is_dirty.return_value = True
         mock_repo.index.commit.return_value.hexsha = "12345abcde"
 
-        with patch("tools.github_tool.stage_all_changes",
-                   create=True) as mock_stage:
-            mock_repo.index.commit("My test commit")
+        mock_repo.index.commit("My test commit")
 
         mock_repo.index.commit.assert_called_once_with("My test commit")
 
