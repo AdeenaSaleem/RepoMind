@@ -189,64 +189,68 @@ class TestRunEndpoint:
 
     # --- Normal tests ---
 
-    @patch("agent.chain.AgentChain.run")
-    def test_run_returns_200(self, mock_agent_run):
+    def test_run_returns_200(self):
         """POST /run with valid data should return HTTP 200."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/1",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-001"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind"
+            )
 
-        response = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Add type hints"
-        })
+            response = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Add type hints"
+            })
 
         assert response.status_code == 200
 
-    @patch("agent.chain.AgentChain.run")
-    def test_run_returns_job_id(self, mock_agent_run):
+    def test_run_returns_job_id(self):
         """POST /run response should contain a job_id."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/1",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-002"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind"
+            )
 
-        response = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Refactor code"
-        })
+            response = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Refactor code"
+            })
 
         assert "job_id" in response.json()
 
-    @patch("agent.chain.AgentChain.run")
-    def test_run_initial_status_is_queued(self, mock_agent_run):
+    def test_run_initial_status_is_queued(self):
         """POST /run response status should be queued."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/1",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-003"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind"
+            )
 
-        response = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Fix bugs"
-        })
+            response = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Fix bugs"
+            })
 
         assert response.json()["status"] == "queued"
 
-    @patch("agent.chain.AgentChain.run")
-    def test_run_with_custom_branch_name(self, mock_agent_run):
+    def test_run_with_custom_branch_name(self):
         """POST /run should accept an optional branch_name field."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/3",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-004"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind"
+            )
 
-        response = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Refactor db calls",
-            "branch_name": "repomind/custom-branch"
-        })
+            response = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Refactor db calls",
+                "branch_name": "repomind/custom-branch"
+            })
 
         assert response.status_code == 200
 
@@ -283,58 +287,64 @@ class TestStatusEndpoint:
 
     # --- Normal tests ---
 
-    @patch("agent.chain.AgentChain.run")
-    def test_status_returns_200_for_existing_job(self, mock_agent_run):
+    def test_status_returns_200_for_existing_job(self):
         """GET /status/{job_id} should return 200 for a known job."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/1",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-005"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind",
+                pr_url=None
+            )
 
-        run_resp = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Fix bugs"
-        })
-        job_id = run_resp.json()["job_id"]
+            run_resp = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Fix bugs"
+            })
+            job_id = run_resp.json()["job_id"]
 
-        status_resp = client.get(f"/status/{job_id}")
+            status_resp = client.get(f"/status/{job_id}")
 
         assert status_resp.status_code == 200
 
-    @patch("agent.chain.AgentChain.run")
-    def test_status_response_has_status_field(self, mock_agent_run):
+    def test_status_response_has_status_field(self):
         """GET /status/{job_id} response should contain a status field."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/1",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-006"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind",
+                pr_url=None
+            )
 
-        run_resp = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Fix bugs"
-        })
-        job_id = run_resp.json()["job_id"]
+            run_resp = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Fix bugs"
+            })
+            job_id = run_resp.json()["job_id"]
 
-        status_resp = client.get(f"/status/{job_id}")
+            status_resp = client.get(f"/status/{job_id}")
 
         assert "status" in status_resp.json()
 
-    @patch("agent.chain.AgentChain.run")
-    def test_status_valid_status_value(self, mock_agent_run):
+    def test_status_valid_status_value(self):
         """GET /status/{job_id} status should be one of the valid values."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/1",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-007"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind",
+                pr_url=None
+            )
 
-        run_resp = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Fix bugs"
-        })
-        job_id = run_resp.json()["job_id"]
+            run_resp = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Fix bugs"
+            })
+            job_id = run_resp.json()["job_id"]
 
-        status_resp = client.get(f"/status/{job_id}")
-        status_value = status_resp.json()["status"]
+            status_resp = client.get(f"/status/{job_id}")
+            status_value = status_resp.json()["status"]
 
         assert status_value in ["queued", "running", "completed", "failed"]
 
@@ -342,7 +352,10 @@ class TestStatusEndpoint:
 
     def test_status_returns_404_for_unknown_job(self):
         """GET /status/{job_id} should return 404 for a non-existent job."""
-        response = client.get("/status/fake_job_that_does_not_exist_12345")
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.get.side_effect = Exception("Job not found")
+
+            response = client.get("/status/fake_job_that_does_not_exist_12345")
 
         assert response.status_code == 404
 
@@ -355,66 +368,75 @@ class TestRefineEndpoint:
 
     # --- Normal tests ---
 
-    @patch("agent.chain.AgentChain.run")
-    def test_refine_returns_200(self, mock_agent_run):
+    def test_refine_returns_200(self):
         """POST /refine should return 200 for a valid existing job."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/2",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-008"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind",
+                pr_url=None,
+                instruction="Fix bugs"
+            )
 
-        run_resp = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Fix bugs"
-        })
-        job_id = run_resp.json()["job_id"]
+            run_resp = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Fix bugs"
+            })
+            job_id = run_resp.json()["job_id"]
 
-        refine_resp = client.post("/refine", json={
-            "job_id": job_id,
-            "instruction": "Also add docstrings"
-        })
+            refine_resp = client.post("/refine", json={
+                "job_id": job_id,
+                "instruction": "Also add docstrings"
+            })
 
         assert refine_resp.status_code == 200
 
-    @patch("agent.chain.AgentChain.run")
-    def test_refine_response_has_job_id(self, mock_agent_run):
+    def test_refine_response_has_job_id(self):
         """POST /refine response should include the job_id."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/2",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-009"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind",
+                pr_url=None,
+                instruction="Fix bugs"
+            )
 
-        run_resp = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Fix bugs"
-        })
-        job_id = run_resp.json()["job_id"]
+            run_resp = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Fix bugs"
+            })
+            job_id = run_resp.json()["job_id"]
 
-        refine_resp = client.post("/refine", json={
-            "job_id": job_id,
-            "instruction": "Also add docstrings"
-        })
+            refine_resp = client.post("/refine", json={
+                "job_id": job_id,
+                "instruction": "Also add docstrings"
+            })
 
         assert refine_resp.json()["job_id"] == job_id
 
-    @patch("agent.chain.AgentChain.run")
-    def test_refine_same_job_id_returned(self, mock_agent_run):
+    def test_refine_same_job_id_returned(self):
         """POST /refine should return the same job_id that was passed in."""
-        mock_agent_run.return_value = {
-            "pr_url": "https://github.com/fake/pull/3",
-            "summary": "Done"
-        }
+        with patch("api.routes.job_manager") as mock_jm:
+            mock_jm.create_job.return_value = "test-job-id-010"
+            mock_jm.get.return_value = MagicMock(
+                status=JobStatus.queued,
+                repo_url="https://github.com/QuantumLogicsLabs/RepoMind",
+                pr_url=None,
+                instruction="Step 1"
+            )
 
-        run_resp = client.post("/run", json={
-            "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
-            "instruction": "Step 1"
-        })
-        job_id = run_resp.json()["job_id"]
+            run_resp = client.post("/run", json={
+                "repo_url": "https://github.com/QuantumLogicsLabs/RepoMind",
+                "instruction": "Step 1"
+            })
+            job_id = run_resp.json()["job_id"]
 
-        refine_resp = client.post("/refine", json={
-            "job_id": job_id,
-            "instruction": "Step 2"
-        })
+            refine_resp = client.post("/refine", json={
+                "job_id": job_id,
+                "instruction": "Step 2"
+            })
 
         assert refine_resp.json()["job_id"] == job_id
 
